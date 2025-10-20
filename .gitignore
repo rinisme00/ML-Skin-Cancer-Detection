@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# Streamlit
+.streamlit/
+
+# Models (keep them out of git; upload in the app sidebar at runtime)
+models/
+*.joblib
+*.pkl
+*.sav
