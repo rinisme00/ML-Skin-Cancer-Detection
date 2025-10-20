@@ -14,3 +14,7 @@ streamlit run app.py
 
 # Note
 Remember to drag pretrained SVM Classification Models into left left task bar.
+
+## Dataset source
+The model was trained with Skin Cancer MNIST: HAM10000 Dataset
+Source: https://www.kaggle.com/datasets/kmader/skin-cancer-mnist-ham10000
