@@ -19,10 +19,10 @@ st.title("🧪 Skin Lesion Classification — SVM (Pretrained, No CNN)")
 
 # --- Auto-load config ---
 DEFAULTS = {
-    "BIN_MODEL_PATH":   os.environ.get("BIN_MODEL_PATH",   "models/svm_binary_model.joblib"),
-    "BIN_SCALER_PATH":  os.environ.get("BIN_SCALER_PATH",  "models/scaler_binary.joblib"),
-    "MC_MODEL_PATH":    os.environ.get("MC_MODEL_PATH",    "models/svm_multi_class_model.joblib"),
-    "MC_SCALER_PATH":   os.environ.get("MC_SCALER_PATH",   "models/scaler_multi_class.joblib"),
+    "BIN_MODEL_PATH":   os.environ.get("BIN_MODEL_PATH",   "./models/svm_binary_model.joblib"),
+    "BIN_SCALER_PATH":  os.environ.get("BIN_SCALER_PATH",  "./models/scaler_binary.joblib"),
+    "MC_MODEL_PATH":    os.environ.get("MC_MODEL_PATH",    "./models/svm_multi_class_model.joblib"),
+    "MC_SCALER_PATH":   os.environ.get("MC_SCALER_PATH",   "./models/scaler_multi_class.joblib"),
 }
 st.caption(f"🔎 Auto paths: {DEFAULTS}")
 
