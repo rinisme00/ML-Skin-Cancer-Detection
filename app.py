@@ -7,7 +7,7 @@ import pandas as pd
 from PIL import Image
 import streamlit as st
 
-from skin_utils import (
+from utils import (
     SIZE, CLASS_NAMES,
     load_joblib_from_bytes, load_joblib_from_path,
     pil_list_to_features,
