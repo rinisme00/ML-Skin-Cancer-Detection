@@ -1,8 +1,7 @@
 from __future__ import annotations
 import io
-import math
 import warnings
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Sequence, Tuple
 
 import joblib
 import numpy as np
@@ -12,35 +11,28 @@ import cv2
 from skimage.feature import local_binary_pattern, graycomatrix, graycoprops, hog
 from skimage.filters import gabor
 
-# -----------------------------
-# Constants & label semantics
-# -----------------------------
-SIZE: int = 32  # must match training
-# If your LabelEncoder followed alphabetical order on 'dx' from HAM10000:
+# ---- Constants ----
+SIZE: int = 32
 CLASS_NAMES: List[str] = ['akiec','bcc','bkl','df','mel','nv','vasc']
 
-# Binary mapping used in the notebook:
-# B = 1: {mel, bcc, akiec, vasc}; M = 0: {nv, df, bkl}
 BINARY_POSITIVE = {'mel','bcc','akiec','vasc'}  # label 1
 BINARY_NEGATIVE = {'nv','df','bkl'}             # label 0
 
-# -----------------------------
-# Loading utilities
-# -----------------------------
+# ---- Loading helpers ----
 def load_joblib_from_bytes(bytes_obj) -> object:
-    """Load a joblib object from raw bytes (e.g., Streamlit file_uploader.getvalue())."""
     if bytes_obj is None:
         return None
     return joblib.load(io.BytesIO(bytes_obj))
 
-# -----------------------------
-# Feature extractors (match the notebook pipeline)
-# -----------------------------
+def load_joblib_from_path(path: str) -> object:
+    return joblib.load(path)
+
+# ---- Feature extractors ----
 def _lbp_hist(gray: np.ndarray, P: int = 8, R: int = 1) -> np.ndarray:
     lbp = local_binary_pattern(gray, P=P, R=R, method='uniform')
     n_bins = P + 2
     hist, _ = np.histogram(lbp.ravel(), bins=np.arange(0, n_bins + 1), range=(0, n_bins), density=True)
-    return hist.astype(np.float32)  # 10 dims
+    return hist.astype(np.float32)  # 10
 
 def _glcm_props(gray: np.ndarray,
                 distances: Sequence[int] = (1, 2, 3),
@@ -48,8 +40,8 @@ def _glcm_props(gray: np.ndarray,
     g8 = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     M = graycomatrix(g8, distances=distances, angles=angles, levels=256, symmetric=True, normed=True)
     props = ['contrast', 'homogeneity', 'energy', 'correlation', 'dissimilarity']
-    feats = [graycoprops(M, p).ravel() for p in props]  # each len = len(distances)*len(angles)
-    return np.concatenate(feats).astype(np.float32)     # 5 * (3*4) = 60
+    feats = [graycoprops(M, p).ravel() for p in props]  # each len = 3*4
+    return np.concatenate(feats).astype(np.float32)     # 60
 
 def _hu_moments(gray: np.ndarray) -> np.ndarray:
     m = cv2.moments(gray)
@@ -82,7 +74,7 @@ def _hog_features(gray: np.ndarray,
         block_norm='L2-Hys',
         visualize=False
     )
-    return h.astype(np.float32)  # ~324 dims on 32x32
+    return h.astype(np.float32)  # ~324 for 32x32
 
 def _intensity_stats(gray: np.ndarray) -> np.ndarray:
     return np.array([gray.mean(), gray.std()], dtype=np.float32)  # 2
@@ -93,12 +85,12 @@ def image_to_flat_gray(img: Image.Image, size: int = SIZE) -> np.ndarray:
 
 def extract_features_one(flat_gray: np.ndarray, size: int = SIZE) -> np.ndarray:
     g = flat_gray.reshape(size, size)
-    f_lbp  = _lbp_hist(g)              # 10
-    f_glcm = _glcm_props(g)            # 60
-    f_hu   = _hu_moments(g)            # 7
-    f_gab  = _gabor_bank(g)            # 24
-    f_hog  = _hog_features(g)          # ~324
-    f_int  = _intensity_stats(g)       # 2
+    f_lbp  = _lbp_hist(g)          # 10
+    f_glcm = _glcm_props(g)        # 60
+    f_hu   = _hu_moments(g)        # 7
+    f_gab  = _gabor_bank(g)        # 24
+    f_hog  = _hog_features(g)      # ~324
+    f_int  = _intensity_stats(g)   # 2
     return np.concatenate([f_lbp, f_glcm, f_hu, f_gab, f_hog, f_int]).astype(np.float32)
 
 def extract_features_batch(flat_grays: List[np.ndarray], size: int = SIZE) -> np.ndarray:
@@ -117,11 +109,8 @@ def pil_list_to_features(images: List[Image.Image], size: int = SIZE) -> np.ndar
     flats = [image_to_flat_gray(im, size=size) for im in images]
     return extract_features_batch(flats, size=size)
 
-# -----------------------------
-# Inference helpers
-# -----------------------------
+# ---- Inference helpers ----
 def build_model_input(X_img_feats: np.ndarray, scaler) -> np.ndarray:
-    """Pad or truncate to match scaler.n_features_in_ if necessary."""
     n_expected = getattr(scaler, 'n_features_in_', X_img_feats.shape[1])
     if n_expected == X_img_feats.shape[1]:
         return X_img_feats
@@ -141,19 +130,17 @@ def ovr_softmax(decision_scores: np.ndarray) -> np.ndarray:
     return eZ / eZ.sum(axis=1, keepdims=True)
 
 def run_binary(X_img_feats: np.ndarray, model, scaler):
-    """Return (pred_labels, score_or_prob), where score_or_prob is P(B) if probas available,
-    otherwise a logistic of margin for display."""
     Xb = build_model_input(X_img_feats, scaler)
     Xb_sc = scaler.transform(Xb)
     if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(Xb_sc)  # shape (N, 2) with columns [P(M=0), P(B=1)]
+        proba = model.predict_proba(Xb_sc)  # (N, 2): [P(M), P(B)]
         pred = np.argmax(proba, axis=1).astype(int)
         pB = proba[:, 1].astype(float)
         return pred, pB, True
     else:
-        margins = model.decision_function(Xb_sc).astype(np.float32)  # positive → class 1
+        margins = model.decision_function(Xb_sc).astype(np.float32)  # >0 → class 1
         pred = model.predict(Xb_sc).astype(int)
-        pB = sigmoid(margins)  # pseudo-probability for display
+        pB = sigmoid(margins)  # display only
         return pred, pB, False
 
 def run_multiclass(X_img_feats: np.ndarray, model, scaler, class_names: Sequence[str] = CLASS_NAMES):
