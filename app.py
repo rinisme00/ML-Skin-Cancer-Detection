@@ -11,7 +11,8 @@ from utils import (
     SIZE, CLASS_NAMES,
     load_joblib_from_bytes, load_joblib_from_path,
     pil_list_to_features,
-    run_binary, run_multiclass
+    run_binary, run_multiclass,
+    image_to_flat_gray, extract_features_one
 )
 
 st.set_page_config(page_title="Skin Lesion SVM Demo", layout="wide")
@@ -129,18 +130,26 @@ with tabs[0]:
     st.subheader("Single Image Prediction")
     up = st.file_uploader("Upload a dermoscopic image (JPG/PNG)", type=['jpg','jpeg','png'], key='single')
     if up is not None:
-        img = Image.open(up).convert('RGB')
-        st.image(img, caption="Uploaded image", use_column_width=True)
+        # 1) Open & convert to GRAYSCALE at training SIZE
+        raw = Image.open(up)
+        g_img = raw.convert('L').resize((SIZE, SIZE), Image.BILINEAR)
 
+        # 2) Show the grayscale actually used for features
+        st.image(g_img, caption=f"Grayscale used for features ({SIZE}×{SIZE})", width=256)
+
+        # 3) Load models/scalers
         bin_model, bin_scaler, mc_model, mc_scaler = get_artifacts()
         if (bin_model is None or bin_scaler is None) and (mc_model is None or mc_scaler is None):
             st.info("No models loaded yet. Bundle them under ./models or set secrets URLs, or upload in the sidebar.")
         else:
-            feats = pil_list_to_features([img], size=SIZE)
+            # 4) Build features from the SAME grayscale image
+            flat = image_to_flat_gray(g_img, size=SIZE)                       # (SIZE*SIZE,)
+            feats = extract_features_one(flat, size=SIZE).reshape(1, -1)      # (1, n_features)
 
+            # 5) Predict
             if bin_model and bin_scaler:
                 pred_bin, pB, is_prob = run_binary(feats, bin_model, bin_scaler)
-                label = "B (mel/bcc/akiec/vasc)" if int(pred_bin[0]) == 1 else "M (nv/df/bkl)"
+                label = "Malignant (mel/bcc/akiec/vasc)" if int(pred_bin[0]) == 1 else "Benign (nv/df/bkl)"
                 st.success(f"**Binary** → {label}  |  {'P(B)=' if is_prob else 'score≈'}**{float(pB[0]):.3f}**")
 
             if mc_model and mc_scaler:
@@ -164,16 +173,22 @@ with tabs[1]:
         if (bin_model is None or bin_scaler is None) and (mc_model is None or mc_scaler is None):
             st.info("No models loaded yet. Bundle them under ./models or set secrets URLs, or upload in the sidebar.")
         else:
-            imgs, names = [], []
+            imgs_gray, names = [], []
             for f in ups:
                 try:
-                    im = Image.open(f).convert('RGB')
-                    imgs.append(im)
+                    raw = Image.open(f)
+                    g = raw.convert('L').resize((SIZE, SIZE), Image.BILINEAR)
+                    imgs_gray.append(g)
                     names.append(os.path.basename(f.name))
                 except Exception as e:
                     st.warning(f"Skipping {f.name}: {e}")
 
-            feats = pil_list_to_features(imgs, size=SIZE)
+            # Hiển thị toàn bộ ảnh grayscale (thu nhỏ) để xác nhận
+            st.image(imgs_gray, caption=names, width=128)
+
+            # Trích đặc trưng từ chính các ảnh grayscale
+            feats = pil_list_to_features(imgs_gray, size=SIZE)
+
             rows = []
 
             # Binary
@@ -192,7 +207,7 @@ with tabs[1]:
                 row = {"image": name}
                 if pred_bin is not None:
                     row["binary_pred"] = int(pred_bin[i])
-                    row["binary_label"] = "B" if row["binary_pred"] == 1 else "M"
+                    row["binary_label"] = "Malignant" if row["binary_pred"] == 1 else "Benign"
                     row["P(B)≈" if has_bin_prob else "score≈"] = float(pB[i])
                 if top1_idx is not None:
                     row["multiclass_top1"] = CLASS_NAMES[int(top1_idx[i])]
